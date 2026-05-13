@@ -12,6 +12,7 @@
 | `Exit-MaintenanceMode-All.ps1` | 4 台一鍵退出 maintenance |
 | `Apply-NestedVsanWorkarounds.ps1` | 套用 6 個 vSAN/LSOM lab workaround advanced settings |
 | `ESXi91-ISO-Upgrade-Steps.md` | ISO 開機升級 console 操作步驟 + lab workaround |
+| `Troubleshoot-VsanPartition.md` | vSAN cluster partition 完整除錯流程（unicast peer list 空） |
 
 ## 跑法
 
