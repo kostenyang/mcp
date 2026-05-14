@@ -15,6 +15,7 @@
 ├── layer2-bringup/        # VCF Installer JSON + 推送腳本
 ├── layer3-postbringup/    # SDDC Manager API: commission/workload domain/NSX
 ├── layer4-day2/           # 升級/補丁/擴增 (PowerCLI)
+├── mcp-server/            # FastMCP server，給 Claude (Code/Desktop) 呼叫 lab tool 用
 └── scripts/               # 共用 helper (bootstrap, secrets, verify)
 ```
 

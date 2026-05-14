@@ -56,6 +56,53 @@
 
 ---
 
+## MCP Server (Claude 整合)
+
+位置: `mcp-server/`. 跑在 10.0.0.65:7000 (HTTPS + SSE), Bearer token 認證, 讓 Claude (Code / Desktop) 能呼叫 lab 操作.
+
+| 檔案 | 用途 |
+|---|---|
+| `vcf-lab-mcp-server.py` | FastMCP server 本體, 10 個 `@mcp.tool()` 函式 + ASGI APIKeyMiddleware |
+| `README.md` | 架構/設計理念/troubleshoot/security |
+| `INSTALL.md` | 從零到 Claude 能呼叫 tool 的 9 步驟編號流程 (每步有驗證指令) |
+
+### `vcf-lab-mcp-server.py` 提供的 10 個 tool
+
+| Tool | 幹嘛 | 打哪個 endpoint | 範例 |
+|---|---|---|---|
+| `ssh_exec` | SSH 到任意 host 跑指令 (用 paramiko) | TCP 22 | `ssh_exec("10.0.1.10", "esxcli system version get")` |
+| `get_ssl_thumbprint` | 抓 host 的 SHA-256 SSL cert thumbprint (VCF bringup 前要) | TCP 443 (TLS handshake only) | `get_ssl_thumbprint("10.0.1.10")` |
+| `vcenter_api` | 任意 vCenter REST API call (自動拿 session token) | `https://<vcenter>/api/...` | `vcenter_api("GET", "/api/vcenter/cluster")` |
+| `vcf_installer_api` | 任意 VCF Installer API call | `https://<installer>/v1/...` | `vcf_installer_api("GET", "/v1/sddcs")` |
+| `sddc_manager_api` | 任意 SDDC Manager API call | `https://<sddc>/v1/...` | `sddc_manager_api("GET", "/v1/domains")` |
+| `vrops_api` | 任意 vROps / Aria Ops API call | `https://<vrops>/suite-api/api/...` | `vrops_api("GET", "/suite-api/api/alerts?activeOnly=true")` |
+| `check_dns` | 用 lab DNS 解析 FQDN (`nslookup`) | UDP/TCP 53 → DNS_SERVER | `check_dns("vcf-m01-vc01.home.lab")` |
+| `ping_host` | ICMP ping 一台 host | ICMP | `ping_host("10.0.1.10", count=3)` |
+| `vcf_version` | 自動偵測 SDDC/Installer/vCenter 版本 (依序試) | 同上三個 | `vcf_version("10.0.1.5")` → "SDDC Manager: VCF 9.0.0.0" |
+| `list_environments` | 列出 lab 已知 VCF 環境 (M01/M02/M03/VCF5-M02), 可選 `probe=True` 即時測連線 | local data + optional 443 probe | `list_environments(probe=True)` |
+
+### Server 內部結構 (`vcf-lab-mcp-server.py`)
+
+| 區塊 | 在做什麼 |
+|---|---|
+| `LAB_ENVIRONMENTS` dict | 寫死的 lab 拓樸表 (M01/M02/M03/VCF5-M02 的 IP / FQDN / deploy script 名稱). Claude 透過 `list_environments` 看到 |
+| `APIKeyMiddleware` (ASGI) | Bearer header 或 `?api_key=` query 比對 `keys.json` 內 token, 不過就 401 |
+| `_vcenter_token / _vcf_token / _sddc_token / _vrops_token` | 4 個 helper, 用 lab 密碼換 access token, 給對應 `*_api` tool 用 |
+| `FastMCP("vcf-lab")` + `mcp.sse_app()` | 起 Starlette ASGI app, 註冊上面那 10 個 `@mcp.tool()` 函式 |
+| `uvicorn.run(...)` | HTTPS (key.pem/cert.pem), 0.0.0.0:7000, 提供 `/sse` 跟 `/messages` 兩個 endpoint |
+
+### 認證 (`keys.json` + middleware)
+
+```
+Client →  Authorization: Bearer <token>          (header, 推薦)
+          或 ?api_key=<token>                    (query, 不推薦, 會進 log)
+Server →  比對 /opt/vcf-mcp/keys.json values     (chmod 600)
+          無效 → 401 Unauthorized
+          有效 → 走進 FastMCP SSE handler
+```
+
+---
+
 ## 典型工作流 (從 4 台 9.0 nested 到 VCF 9.1 起來)
 
 ```
