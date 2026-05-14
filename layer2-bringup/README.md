@@ -38,6 +38,14 @@ pwsh ./New-VcfLab.ps1 -VcfInstaller https://<vcf-installer-ip-or-fqdn>
 
 正式環境加 `-SkipLabMode`。
 
+### domainmanager timeout 調整
+
+慢速 lab 還需把 VCF Installer / SDDC Manager 的 `domainmanager` timeout 參數調大,
+避免 appliance OVF 佈署 / 服務啟動超時導致 bring-up 失敗:
+
+- [timeout-tuning.md](timeout-tuning.md) — 調整的參數、受影響主機、備份與回退
+- [timeout-tuning-operations-log.md](timeout-tuning-operations-log.md) — 實際操作指令(含取得 root 的 pty + su 方法)
+
 ## 待補
 
 - [ ] VCF 9.1 OpenAPI 對齊欄位名（nsxtSpec? nsxSpec?），跑 `-ValidateOnly` 看 error 對齊
