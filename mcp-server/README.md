@@ -4,6 +4,8 @@
 
 跑在 Linux 主機上，HTTPS + SSE transport + Bearer token API key 認證。Client 端用 `.mcp.json` 或 `claude_desktop_config.json` 註冊。
 
+> **要裝看這個**：[`INSTALL.md`](./INSTALL.md) — 9 步從零到 Claude 能呼叫 tool，每步驟有獨立驗證點。
+
 ---
 
 ## 為什麼用 MCP，不是寫個 LLM gateway？
