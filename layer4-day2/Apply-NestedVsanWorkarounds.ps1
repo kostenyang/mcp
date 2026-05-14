@@ -8,6 +8,7 @@
         /LSOM/lsomSlowDeviceUnmount       = 0
         /VSAN/SwapThickProvisionDisabled  = 1
         /VSAN/Vsan2ZdomCompZstd           = 0
+        /VSAN/FakeSCSIReservations        = 1
         /VSAN/GuestUnmap                  = 1
 
 .PARAMETER Hosts

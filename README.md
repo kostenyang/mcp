@@ -6,64 +6,86 @@
 
 ## Layout
 
+依執行流程分層,`scripts/` 開機後依序跑 Layer 1 → 4:
+
 ```
 .
-├── inventory/             # 環境拓樸 (hosts, IPs, FQDNs, VLANs)
-│   ├── lab.yaml           # 主清單 (明文, 非敏感)
-│   └── secrets/           # sops + age 加密過的密碼/憑證
-├── layer1-nested/         # Nested ESXi VM 部署 + 部署前準備
-├── layer2-bringup/        # VCF Installer JSON + 推送腳本
-├── layer3-postbringup/    # SDDC Manager API: commission/workload domain/NSX
-├── layer4-day2/           # 升級/補丁/擴增 (PowerCLI)
-├── mcp-server/            # FastMCP server，給 Claude (Code/Desktop) 呼叫 lab tool 用
-└── scripts/               # 共用 helper (bootstrap, secrets, verify)
+├── inventory/                  # 環境拓樸與密碼
+│   ├── lab.yaml                #   主清單 (明文, 非敏感: IP/FQDN/VLAN/datastore)
+│   └── secrets/                #   sops + age 加密過的密碼/憑證
+├── scripts/                    # 共用 helper (跑在 automation host)
+│   ├── bootstrap-automation-host.sh
+│   └── load-secrets.sh
+├── layer1-nested/              # Nested ESXi 部署 + 部署前準備
+│   └── Prepare-NestedESXi.ps1
+├── layer2-bringup/             # VCF Installer JSON + 推送腳本
+│   ├── New-VcfLab.ps1          #   一鍵 wrapper
+│   ├── Generate-BringupSpec.ps1 / Submit-Bringup.ps1
+│   ├── vcf91-bringup.template.json
+│   └── timeout-tuning.md       #   慢速 lab 的 domainmanager timeout workaround
+├── layer3-postbringup/         # SDDC Manager API: commission / workload domain / NSX (TODO)
+├── layer4-day2/                # 升級 / 補丁 / vSAN workaround (PowerCLI)
+│   ├── Run-BatchUpgrade.ps1 / Run-BatchIsoBoot.ps1
+│   ├── Upgrade-NestedESXi91.ps1 / Exit-MaintenanceMode-All.ps1
+│   ├── Apply-NestedVsanWorkarounds.ps1
+│   └── ESXi91-ISO-Upgrade-Steps.md / Troubleshoot-VsanPartition.md
+├── mcp-server/                 # FastMCP server，給 Claude (Code/Desktop) 呼叫 lab tool 用
+├── README.md                   # 本檔
+└── SCRIPTS.md                  # 腳本功能對照表
 ```
+
+## 各 Layer
+
+| Layer | 狀態 | 內容 | README |
+|---|---|---|---|
+| 1 Nested infra | 部分 | `Prepare-NestedESXi.ps1` (vSAN/LSOM advanced settings) ready;`Deploy-NestedESXi.ps1` 待補 | [layer1-nested/](./layer1-nested/README.md) |
+| 2 VCF Bring-up | scaffold | template/generator/submitter ready,等 9.1 OpenAPI 對齊欄位;timeout workaround 已記錄 | [layer2-bringup/](./layer2-bringup/README.md) |
+| 3 Post-bringup | TODO | SDDC Manager API: commission hosts / new workload domain / NSX edge | [layer3-postbringup/](./layer3-postbringup/README.md) |
+| 4 Day-2 ops | ✅ | nested ESXi 9.0 → 9.1 升級 + vSAN/LSOM workaround 已實作 | [layer4-day2/](./layer4-day2/README.md) |
+
+MCP server 說明見 [mcp-server/README.md](./mcp-server/README.md) 與 [mcp-server/INSTALL.md](./mcp-server/INSTALL.md)。
 
 ## Quick start
 
 ```bash
-# Bootstrap automation host (10.0.0.65)
+# 0. Bootstrap automation host (10.0.0.65)
 LAB_USER=labops bash scripts/bootstrap-automation-host.sh
-
-# 切到 labops 帳號
 su - labops
-source /opt/vcf-lab/.venv/bin/activate    # Python venv
+source /opt/vcf-lab/.venv/bin/activate          # Python venv
 
-# Layer 1: nested ESXi 部署前準備 (開機後、VCF Installer 前)
+# 1. Layer 1: nested ESXi 部署前準備 (開機後、VCF Installer 前)
 pwsh ./layer1-nested/Prepare-NestedESXi.ps1
 
-# Layer 2: VCF bring-up
-source scripts/load-secrets.sh
+# 2. Layer 2: VCF bring-up (腳本自己 sops 解密 secrets，不需先 source)
 pwsh ./layer2-bringup/New-VcfLab.ps1 -VcfInstaller https://10.0.1.5
 
-# Layer 4: day-2 (例: 批次升級 nested ESXi 到 9.1)
+# 4. Layer 4: day-2 (例: 批次升級 nested ESXi 到 9.1)
 pwsh ./layer4-day2/Run-BatchUpgrade.ps1
 ```
 
-## Inventory
+## Inventory & Secrets
 
-所有腳本從 `inventory/lab.yaml` 取拓樸資訊（IP、hostname、VM name、datastore）。
-密碼從 `inventory/secrets/lab.yaml`（sops 加密）取，不會明文進 git。
+所有腳本從 `inventory/lab.yaml` 取拓樸資訊(IP、hostname、VM name、datastore)。
+密碼放 `inventory/secrets/lab.yaml`,**sops + age 加密過才 commit**,不會明文進 git;欄位範本見 `inventory/secrets/lab.example.yaml`。
 
 ```bash
-# 編輯密碼檔 (自動解密 -> 編輯 -> 加密)
+# 初次建立密碼檔
+cp inventory/secrets/lab.example.yaml inventory/secrets/lab.yaml
+# 填值後加密
+sops -e -i inventory/secrets/lab.yaml
+
+# 之後編輯 (自動解密 -> 編輯 -> 加密)
 sops inventory/secrets/lab.yaml
 
-# 在腳本裡讀
+# 在 shell / bash 腳本裡讀
 source scripts/load-secrets.sh
 echo "$ESXI_ROOT_PW"
 ```
 
-## 各 Layer 狀態
+> Layer 2 的 PowerShell 腳本會自己呼叫 sops 解密,**不需要** 先 `source load-secrets.sh`。
 
-| Layer | 狀態 | 備註 |
-|---|---|---|
-| 1 Nested infra | 部分 | 部署前 advanced settings + vSAN unicast 修復腳本 ready |
-| 2 VCF Bring-up | scaffold | template/generator/submitter ready，等 9.1 OpenAPI 對齊 |
-| 3 Post-bringup | TODO | SDDC Manager API |
-| 4 Day-2 ops | ✅ | nested ESXi 9.0 → 9.1 升級 + vSAN workaround 已實作 |
+## 前置需求
 
-## Secrets
-
-密碼放 `inventory/secrets/lab.yaml`（sops + age 加密過再 commit），範本見 `lab.example.yaml`。
-Layer2 腳本會自己呼叫 sops 解密，不需要先 source env vars。
+- **PowerShell 7 (`pwsh`)** — 不要用 5.1(中文字串編碼會壞)
+- **PowerCLI 13.x** — 第一次跑腳本會自動裝
+- automation host 上需有 `sops` / `age` / age 私鑰(`~/.config/sops/age/keys.txt`)才能解密 secrets
