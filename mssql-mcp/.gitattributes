@@ -1,0 +1,15 @@
+# Force LF for shell scripts so bash on Linux doesn't choke on the CRLF.
+*.sh text eol=lf
+
+# Source / config / docs: let git handle normalization, but no CRLF on Linux side.
+*.ts text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+Dockerfile text eol=lf
+.env.example text eol=lf
+.gitignore text eol=lf
+
+# Binary
+*.png binary

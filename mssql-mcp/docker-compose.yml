@@ -1,0 +1,29 @@
+services:
+  mssql-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mssql-mcp:local
+    container_name: mssql-mcp
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - SERVER_NAME=${SERVER_NAME}
+      - DATABASE_NAME=${DATABASE_NAME}
+      - SQL_USER=${SQL_USER}
+      - SQL_PASSWORD=${SQL_PASSWORD}
+      - TRUST_SERVER_CERTIFICATE=${TRUST_SERVER_CERTIFICATE:-true}
+      - READONLY=${READONLY:-false}
+      - CONNECTION_TIMEOUT=${CONNECTION_TIMEOUT:-30}
+      - SERVER_PORT=${SERVER_PORT:-1433}
+      - ENCRYPT=${ENCRYPT:-true}
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--api-key"
+      - "${MCPO_API_KEY}"
+      - "--config"
+      - "/app/config.json"

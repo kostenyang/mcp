@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mssql": {
+      "command": "node",
+      "args": ["/app/mssql-mcp/dist/index.js"]
+    }
+  }
+}

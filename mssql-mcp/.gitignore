@@ -1,0 +1,11 @@
+# Secrets
+.env
+
+# Build artefacts
+src/node_modules/
+src/dist/
+
+# Offline bundle (image tar is too big for git — ship via release attachment)
+dist-offline/
+*.image.tar
+*.image.tar.gz
