@@ -36,3 +36,7 @@ batch-*.csv
 # ISO / depot (大檔不入 git)
 *.iso
 *-depot.zip
+
+# VMware docs RAG — 來源檔與向量索引都不入 git
+docs-src/
+docs-index/

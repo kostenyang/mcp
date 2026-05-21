@@ -50,6 +50,14 @@ sudo ./venv/bin/pip install \
 # mcp: 1.27.x 以上
 ```
 
+> **選配 — VMware 文件 RAG**：若要用 `search_vmware_docs` / `vmware_docs_index_info`
+> 兩個 tool，額外裝這三個套件（會一併拉進 `torch`，約 2GB，CPU 版即可）：
+> ```bash
+> sudo ./venv/bin/pip install chromadb sentence-transformers pypdf
+> ```
+> 不裝也不影響 server 啟動 —— 那兩個 tool 在缺套件時會回傳明確錯誤，其餘 tool 照常運作。
+> 索引建立流程見本檔最後的「VMware 文件 RAG」段。
+
 ---
 
 ## 2. 產生 TLS 憑證
@@ -267,7 +275,8 @@ asyncio.run(main())
 PY
 ```
 
-**驗證**：能看到 `tools: [...]` 列出 10 個 tool，且 `ping_host` 實際回 ping 結果。
+**驗證**：能看到 `tools: [...]` 列出 12 個 tool，且 `ping_host` 實際回 ping 結果。
+（其中 `search_vmware_docs` / `vmware_docs_index_info` 即使沒裝 RAG 套件也會列出，只是呼叫時回傳「dependencies not installed」。）
 
 如果失敗：
 
@@ -334,6 +343,61 @@ PY
    - 「lab 環境有哪些」→ 會呼叫 `list_environments`
 
 **全綠才算裝完。**
+
+---
+
+## VMware 文件 RAG（選配）
+
+讓 `search_vmware_docs` 能語意搜尋 VMware 官方文件 + 你自己的 lab 筆記，
+原始文件不會進 Claude 的 context（只回傳 top-k 片段）。索引由
+[`ingest_docs.py`](./ingest_docs.py) **離線**建立。
+
+### 1. 裝套件
+
+見步驟 1 的「選配」段：`pip install chromadb sentence-transformers pypdf`。
+
+### 2. 準備來源檔
+
+把文件放成這個結構（`ingest_docs.py` 依資料夾決定 `source` 標籤）：
+
+```
+docs-src/
+  official/   ← VCF 9.1 / vSphere / vSAN 文件 PDF、release notes
+  kb/         ← Broadcom KB 文章（存成 .pdf / .html / .txt）
+```
+
+支援副檔名：`.pdf .md .txt .html .htm`。lab 筆記不用搬 —— 用 `--lab-notes`
+直接指向 vcf9.1-lab repo，裡面所有 `*.md` 會被收進去。
+
+### 3. 建索引
+
+```bash
+/opt/vcf-mcp/venv/bin/python3 ingest_docs.py \
+  --docs-src  ./docs-src \
+  --lab-notes /path/to/vcf9.1-lab \
+  --index-dir /opt/vcf-mcp/docs-index
+```
+
+第一次跑會下載 embedding model（`BAAI/bge-m3`，多語、~2GB）。之後重跑只
+embed，不重抓。文件有更新就重跑 —— 它每次都整個重建 collection。
+
+**驗證**：
+```bash
+ls /opt/vcf-mcp/docs-index/   # 有 chroma.sqlite3 等檔案
+```
+
+### 4. 重啟並驗證
+
+```bash
+sudo systemctl restart vcf-mcp
+```
+
+在 Claude 對話裡問「docs index 有什麼」→ 會呼叫 `vmware_docs_index_info`，
+回傳每個 source 的 chunk 數與建立時間。再問一個 VMware 知識問題即會走
+`search_vmware_docs`。
+
+> 文件更新後重跑步驟 3、再 `systemctl restart vcf-mcp` 即可。
+> 自訂索引路徑 / 模型：env `VMWARE_DOCS_INDEX_DIR`、`VMWARE_DOCS_EMBED_MODEL`。
 
 ---
 
@@ -404,4 +468,7 @@ sudo systemctl daemon-reload
 7. server-side smoke test (initialize + tools/list + ping_host)
 8. client .mcp.json / claude_desktop_config.json
 9. restart client → /mcp shows connected → call a tool
+
+選配. docs RAG: pip install chromadb sentence-transformers pypdf
+        → docs-src/{official,kb} + ingest_docs.py → /opt/vcf-mcp/docs-index
 ```
