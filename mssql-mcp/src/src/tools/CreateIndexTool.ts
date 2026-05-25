@@ -32,7 +32,11 @@ export class CreateIndexTool implements Tool {
 
   async run(params: any) {
     try {
-      const { schemaName, tableName, indexName, columns, isUnique = false, isClustered = false } = params;
+      // schemaName is documented as optional but the upstream impl had no
+      // default — when omitted, the template literal stringified `undefined`
+      // and built `CREATE INDEX ... ON undefined.<table>`. Default to dbo
+      // (the SQL Server default schema) so callers can leave it out.
+      const { schemaName = 'dbo', tableName, indexName, columns, isUnique = false, isClustered = false } = params;
 
       let indexType = isClustered ? "CLUSTERED" : "NONCLUSTERED";
       if (isUnique) {
