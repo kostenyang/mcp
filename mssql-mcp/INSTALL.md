@@ -95,62 +95,95 @@ Container logs: `docker compose -f /opt/mssql-mcp/docker-compose.yml logs -f`.
 
 ---
 
-## B. Build the offline bundle (do this once on a connected machine)
+## B. Build the offline bundle (once, on a machine with internet)
 
-After a successful online install, on the same machine:
+```bash
+cd /opt/mssql-mcp        # repo dir (or wherever you cloned it)
+sudo bash build-offline-bundle.sh
+```
+
+This produces:
+
+```
+dist-offline/
+├── mssql-mcp.image.tar.gz       (the docker image, ~200 MB)
+├── docker-deb/                  (cached debs for offline Docker install)
+└── mssql-mcp-offline.tar.gz     (everything bundled — ship this)
+```
+
+## B-bis. Publish on the lab static server (optional but recommended)
+
+Have one host serve the image so air-gapped targets can `curl` it instead of needing scp. The compose stack ships an `offline-files` service for exactly this — it's a tiny `nginx:alpine` over `./dist-offline/`, gated by a profile so it only starts when you opt in:
 
 ```bash
 cd /opt/mssql-mcp
-docker save mssql-mcp:local | gzip > dist-offline/mssql-mcp.image.tar.gz
+docker compose --profile offline-server up -d offline-files
 ```
 
-Optionally cache the Docker apt packages for fully air-gapped targets running stock Ubuntu:
+Now the tarballs are at:
+
+```
+http://<this-host>:8080/mssql-mcp.image.tar.gz
+http://<this-host>:8080/mssql-mcp-offline.tar.gz
+```
+
+> Unauthenticated, read-only — lab-internal use only. Don't expose `:8080`
+> outside the LAN.
+
+To stop just the file server (keeps mssql-mcp running):
 
 ```bash
-mkdir -p /opt/mssql-mcp/dist-offline/docker-deb
-apt-get download docker-ce docker-ce-cli containerd.io \
-                 docker-buildx-plugin docker-compose-plugin \
-                 -o Dir::Cache::archives=/opt/mssql-mcp/dist-offline/docker-deb
+docker compose --profile offline-server stop offline-files
 ```
-
-Bundle for transport:
-
-```bash
-cd /opt
-tar -czf mssql-mcp-offline.tar.gz \
-    mssql-mcp/Dockerfile \
-    mssql-mcp/docker-compose.yml \
-    mssql-mcp/config.json \
-    mssql-mcp/.env.example \
-    mssql-mcp/install-offline.sh \
-    mssql-mcp/README.md \
-    mssql-mcp/INSTALL.md \
-    mssql-mcp/dist-offline/
-```
-
-Resulting `mssql-mcp-offline.tar.gz` is ~200 MB (almost all from the image layer).
 
 ---
 
-## C. Offline install on the target
+## C. Offline install on the target — three flavours
+
+### C.1 Target can reach the lab static server (recommended)
 
 ```bash
-scp mssql-mcp-offline.tar.gz target:/tmp/
-ssh target
 sudo mkdir -p /opt
-sudo tar -xzf /tmp/mssql-mcp-offline.tar.gz -C /opt
+# Pull the bundle from the lab static server, extract.
+curl -fL -O http://10.0.0.68:8080/mssql-mcp-offline.tar.gz
+sudo tar -xzf mssql-mcp-offline.tar.gz -C /opt
 cd /opt/mssql-mcp
-sudo cp dist-offline/mssql-mcp.image.tar.gz .
-sudo cp .env.example .env && sudo chmod 600 .env && sudoedit .env       # fill in
+
+sudo cp .env.example .env && sudo chmod 600 .env && sudoedit .env       # fill in DB creds
 sudo bash install-offline.sh
 ```
 
 `install-offline.sh` will:
 
-1. Install Docker from `dist-offline/docker-deb/` if Docker isn't already present and the debs are present (otherwise it errors and asks you to pre-install Docker).
-2. `docker load` the image.
-3. `docker compose up -d`.
-4. Poll for readiness.
+1. Use the bundled `dist-offline/mssql-mcp.image.tar.gz` directly.
+2. If Docker isn't installed AND `dist-offline/docker-deb/` is present, install Docker from those debs.
+3. `docker load` the image.
+4. `docker compose up -d`.
+5. Poll for readiness.
+
+### C.2 Target can only reach the image, not the full bundle
+
+Put only the source repo on the target (e.g. clone from a mirror), then let the script fetch the image from the lab static server:
+
+```bash
+git clone https://github.com/kostenyang/mcp.git
+cd mcp/mssql-mcp
+cp .env.example .env && chmod 600 .env && $EDITOR .env
+
+# Default BUNDLE_URL is http://10.0.0.68:8080/mssql-mcp.image.tar.gz; override if needed:
+sudo BUNDLE_URL=http://your-host:8080/mssql-mcp.image.tar.gz bash install-offline.sh
+```
+
+### C.3 Fully air-gapped (no network at all)
+
+Build the bundle on a connected machine (§B), `scp` the resulting `mssql-mcp-offline.tar.gz` to the target on a USB stick, then:
+
+```bash
+sudo tar -xzf mssql-mcp-offline.tar.gz -C /opt
+cd /opt/mssql-mcp
+sudo cp .env.example .env && sudo chmod 600 .env && sudoedit .env
+sudo bash install-offline.sh
+```
 
 ---
 

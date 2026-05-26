@@ -22,13 +22,28 @@ When `READONLY=true`: only the read trio.
 
 ## Install
 
-See [INSTALL.md](INSTALL.md) for the step-by-step. TL;DR:
+See [INSTALL.md](INSTALL.md) for the step-by-step. TL;DR — three paths:
 
 ```bash
-cp .env.example .env && $EDITOR .env       # fill in DB creds + API key
-sudo bash install-online.sh                # online (builds image)
-# — or — drop in the pre-built image tar and:
-sudo bash install-offline.sh               # offline (air-gapped)
+cp .env.example .env && $EDITOR .env           # fill in DB creds + API key
+
+# Path 1: target has internet
+sudo bash install-online.sh                     # builds image from source
+
+# Path 2: target is in lab, can reach the lab static server (10.0.0.68:8080)
+sudo bash install-offline.sh                    # auto-curls image from BUNDLE_URL
+
+# Path 3: fully air-gapped — first run build-offline-bundle.sh on a connected
+# machine, ship the produced mssql-mcp-offline.tar.gz, then on the target:
+sudo tar -xzf mssql-mcp-offline.tar.gz -C /opt && cd /opt/mssql-mcp && \
+  sudo bash install-offline.sh
+```
+
+To make Path 2 work for others, the host that built the image runs:
+
+```bash
+docker compose --profile offline-server up -d offline-files
+# now http://<this-host>:8080/ serves dist-offline/ over plain nginx
 ```
 
 ## Quick test

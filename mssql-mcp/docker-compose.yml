@@ -27,3 +27,19 @@ services:
       - "${MCPO_API_KEY}"
       - "--config"
       - "/app/config.json"
+
+  # Lab-internal static file server for the offline install bundle.
+  # Serves whatever is in ./dist-offline/ at http://<this-host>:8080/.
+  # Read-only and unauthenticated — intended for trusted LAN use only.
+  # Only starts when you opt in:
+  #   docker compose --profile offline-server up -d
+  offline-files:
+    image: nginx:alpine
+    container_name: mssql-mcp-offline-files
+    restart: always
+    ports:
+      - "8080:80"
+    volumes:
+      - ./dist-offline:/usr/share/nginx/html:ro
+    profiles:
+      - offline-server

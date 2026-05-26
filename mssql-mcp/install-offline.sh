@@ -1,13 +1,26 @@
 #!/usr/bin/env bash
-# install-offline.sh — air-gapped installer for mssql-mcp.
-# Expects this directory to contain:
-#   docker-compose.yml, config.json, .env (filled in), .env.example
-#   mssql-mcp.image.tar.gz   (output of `docker save mssql-mcp:local | gzip`)
-#   docker-deb/              (optional: cached .deb files for offline Docker install)
+# install-offline.sh — air-gapped / lab-internal installer for mssql-mcp.
+#
+# Two ways to feed it the image tarball:
+#
+#   A) Pre-staged locally — put mssql-mcp.image.tar.gz in this directory
+#      (this is what `build-offline-bundle.sh` produces, or what gets
+#      shipped inside mssql-mcp-offline.tar.gz).
+#
+#   B) Lab static server — set BUNDLE_URL to a reachable URL serving the
+#      tarball, e.g. http://10.0.0.68:8080/mssql-mcp.image.tar.gz, and the
+#      script will curl it on first run.
+#
+# Optional: docker-deb/ next to this script will install Docker from cached
+# .debs if Docker is missing. Otherwise the script errors and asks you to
+# pre-install Docker.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE"
+
+# Default lab static endpoint. Override by exporting BUNDLE_URL beforehand.
+: "${BUNDLE_URL:=http://10.0.0.68:8080/mssql-mcp.image.tar.gz}"
 
 require_root() {
   if [ "$(id -u)" -ne 0 ]; then
@@ -32,13 +45,26 @@ ensure_docker_offline() {
   fi
 }
 
+fetch_image_if_missing() {
+  if [ -f mssql-mcp.image.tar.gz ]; then
+    echo "  using local mssql-mcp.image.tar.gz ($(du -h mssql-mcp.image.tar.gz | cut -f1))"
+    return
+  fi
+  step "Tarball missing locally — fetching from $BUNDLE_URL"
+  if ! curl -fL --connect-timeout 10 -o mssql-mcp.image.tar.gz "$BUNDLE_URL"; then
+    echo "ERR: failed to download $BUNDLE_URL" >&2
+    echo "  Either:" >&2
+    echo "    a) bring the tarball over manually and place it next to this script, or" >&2
+    echo "    b) export BUNDLE_URL=<reachable url> and re-run," >&2
+    echo "    c) start the offline-files server on a reachable host (see INSTALL.md)" >&2
+    exit 1
+  fi
+  echo "  downloaded $(du -h mssql-mcp.image.tar.gz | cut -f1)"
+}
+
 require_root
 ensure_docker_offline
-
-if [ ! -f mssql-mcp.image.tar.gz ]; then
-  echo "ERR: mssql-mcp.image.tar.gz missing in $HERE" >&2
-  exit 1
-fi
+fetch_image_if_missing
 
 step "Loading container image"
 gunzip -c mssql-mcp.image.tar.gz | docker load
