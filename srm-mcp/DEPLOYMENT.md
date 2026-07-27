@@ -93,16 +93,33 @@ OpenWebUI ──(OpenAPI tools)──> mcpo ──(MCP streamable-HTTP)──> s
      └──────────────────────> external LLM (tool calling)
 ```
 
-Files are in `deploy/`. The provisioning scripts that build the VM itself are in
-`deploy/provision/` (rtolab-specific: cloud-init seed ISO + OVA deploy via PowerCLI).
-
 ### Prereqs on the VM
 
 Ubuntu with Docker + compose plugin. (On Ubuntu 20.04, the `get.docker.com` script
 fails on `docker-model-plugin`; install `docker-ce docker-ce-cli containerd.io
 docker-compose-plugin docker-buildx-plugin` explicitly — the seed script already does this.)
+The provisioning scripts that build the VM itself are in `deploy/provision/` (rtolab-specific:
+cloud-init seed ISO + OVA deploy via PowerCLI).
 
-### Bring it up
+### 2a. Minimal — just the MCP on the VM
+
+If you only want the MCP HTTP server running on the VM (no chat UI):
+
+```bash
+docker build -t srm-mcp:0.1.0 .
+docker run -d --name srm-mcp --restart unless-stopped -p 8080:8080 \
+  -e SRM_MCP_API_KEYS="$(openssl rand -hex 24)" \
+  srm-mcp:0.1.0
+# health: curl http://<vm>:8080/healthz  ->  ok
+# MCP endpoint (Bearer): http://<vm>:8080/mcp
+```
+
+Go LIVE: add `-e SRM_LIVE=1 -e SRM_SSO_PASS=... -e SRM_APPLIANCE_PASS=...` (the VM must
+reach `192.168.114.x`).
+
+### 2b. Full stack (+ mcpo + OpenWebUI) for chat testing
+
+Files are in `deploy/`.
 
 ```bash
 cd deploy
