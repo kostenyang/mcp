@@ -115,6 +115,8 @@ Passwords are **only** read from env vars — never stored in `srm.yaml`.
 
 ## Three ways to run (one codebase, `MCP_TRANSPORT` switches)
 
+**Full step-by-step for all three: [DEPLOYMENT.md](DEPLOYMENT.md).**
+
 | form | transport | where | docs |
 |---|---|---|---|
 | **k8s** | streamable-HTTP `:8080` | VKS / shared | `manifests/` |
