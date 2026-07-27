@@ -1,0 +1,55 @@
+# srm-mcp topology — rtolab VCF 5.2.1 two-site SRM / vSphere Replication (Live Site Recovery 9.0.2)
+# Source of truth: rtolab/srm/README.md endpoint table.
+#
+# Copy to config/srm.yaml and keep OUT of git (see .gitignore). Passwords come from
+# env vars, never from this file — the *_pass_env keys name the env var to read.
+#
+# All IPs are on the rtolab mgmt network 192.168.114.0/24. The MCP must run somewhere
+# that can reach that subnet (SELAB-Cluster Ubuntu VM, or a pod on VKS with routing to
+# 192.168.114.x). rtolab.local is NOT resolvable from the automation host resolver, so
+# appliance/vCenter FQDNs may need /etc/hosts entries or you can just use IPs.
+
+domain: rtolab.local
+
+# vCenter SSO admin (same for both inner vCenters in this lab)
+sso_user: administrator@vsphere.local
+sso_pass_env: SRM_SSO_PASS          # export SRM_SSO_PASS='<your-vcenter-sso-password>'
+
+# Appliance VAMI admin (config API on :5480)
+appliance_user: admin
+appliance_pass_env: SRM_APPLIANCE_PASS   # export SRM_APPLIANCE_PASS='<your-appliance-vami-password>'
+
+sites:
+  site1:
+    name: rtolab-521-site1
+    role: protected
+    sddc_id: vcf-m02b
+    vcenter:
+      fqdn: kosten-vcf521b-vc.rtolab.local
+      ip: 192.168.114.96
+      instance_uuid: d777434b-e8d6-4b94-9297-5bc59811e3e7   # = lookup serviceId
+    vr:
+      fqdn: kosten-vcf521b-vr.rtolab.local
+      ip: 192.168.114.46
+      ext_key: com.vmware.vcHms
+    srm:
+      fqdn: kosten-vcf521b-srm.rtolab.local
+      ip: 192.168.114.47
+      ext_key: com.vmware.vcDr
+
+  site2:
+    name: rtolab-521-site2
+    role: recovery
+    sddc_id: vcf-m02c
+    vcenter:
+      fqdn: kosten-vcf521-vc.rtolab.local
+      ip: 192.168.114.56
+      instance_uuid: b6648f6c-382d-4be3-8570-79ccab9bc8a6
+    vr:
+      fqdn: kosten-vcf521-vr.rtolab.local
+      ip: 192.168.114.48
+      ext_key: com.vmware.vcHms
+    srm:
+      fqdn: kosten-vcf521-srm.rtolab.local
+      ip: 192.168.114.49
+      ext_key: com.vmware.vcDr
