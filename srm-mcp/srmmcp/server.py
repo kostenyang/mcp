@@ -485,6 +485,59 @@ def srm_pair_sites(local_site: str = "site1", remote_site: str = "site2",
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Gemini-compatible tool schemas
+# ──────────────────────────────────────────────────────────────────────────────
+# Gemini's function-calling accepts only a SUBSET of OpenAPI/JSON-Schema. Unknown
+# keywords (title, default, additionalProperties, $ref/$defs, nullable-as-anyOf,
+# odd formats) make Gemini silently drop the whole tool — the model then behaves as
+# if it has no tools and hallucinates. FastMCP emits `title`/`default` per property,
+# so we strip the incompatible keywords from every tool's inputSchema at startup.
+# (Defaults still apply — they live in the Python function signature, not the schema.)
+# ══════════════════════════════════════════════════════════════════════════════
+
+_SCHEMA_STRIP = {"title", "default", "additionalProperties", "$schema", "$defs", "$ref"}
+_ALLOWED_FORMATS = {None, "date-time", "enum"}
+
+
+def _gemini_safe_schema(node):
+    if isinstance(node, list):
+        return [_gemini_safe_schema(x) for x in node]
+    if not isinstance(node, dict):
+        return node
+    # collapse nullable anyOf ([{...}, {"type":"null"}]) -> {..., "nullable": true}
+    if "anyOf" in node:
+        variants = node["anyOf"]
+        non_null = [v for v in variants if not (isinstance(v, dict) and v.get("type") == "null")]
+        if len(non_null) == 1:
+            merged = dict(non_null[0])
+            for k, v in node.items():
+                if k != "anyOf":
+                    merged.setdefault(k, v)
+            if len(non_null) != len(variants):
+                merged["nullable"] = True
+            return _gemini_safe_schema(merged)
+    out = {}
+    for k, v in node.items():
+        if k in _SCHEMA_STRIP:
+            continue
+        out[k] = _gemini_safe_schema(v)
+    if out.get("format") not in _ALLOWED_FORMATS:
+        out.pop("format", None)
+    return out
+
+
+def _sanitize_tool_schemas() -> None:
+    for tool in mcp._tool_manager.list_tools():
+        try:
+            tool.parameters = _gemini_safe_schema(tool.parameters)
+        except Exception:
+            pass
+
+
+_sanitize_tool_schemas()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # HTTP wrapper: /healthz (open) + Bearer auth on everything else
 # ══════════════════════════════════════════════════════════════════════════════
 
