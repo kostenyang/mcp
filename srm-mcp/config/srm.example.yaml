@@ -31,11 +31,9 @@ sites:
     vr:
       fqdn: kosten-vcf521b-vr.rtolab.local
       ip: 192.168.114.46
-      ext_key: com.vmware.vcHms
     srm:
       fqdn: kosten-vcf521b-srm.rtolab.local
       ip: 192.168.114.47
-      ext_key: com.vmware.vcDr
 
   site2:
     name: rtolab-521-site2
@@ -48,8 +46,6 @@ sites:
     vr:
       fqdn: kosten-vcf521-vr.rtolab.local
       ip: 192.168.114.48
-      ext_key: com.vmware.vcHms
     srm:
       fqdn: kosten-vcf521-srm.rtolab.local
       ip: 192.168.114.49
-      ext_key: com.vmware.vcDr
