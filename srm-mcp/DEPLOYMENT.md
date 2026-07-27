@@ -16,7 +16,21 @@ All three run the same image. They differ only in how the process is started and
 
 **Topology** lives in `config/srm.example.yaml` (copy to `config/srm.yaml` for a real run;
 IPs are already rtolab's, so the example works for LIVE too). Passwords are **never** in
-YAML — they come from env vars.
+YAML — they come from env vars. The file holds **only fields the MCP actually reads**:
+
+| Field | Read by | Notes |
+|-------|---------|-------|
+| `sso_user`, `sso_pass_env` | vCenter + SRM v2 REST auth | password comes from the named env var, not the file |
+| `appliance_user`, `appliance_pass_env` | appliance config API (`:5480`) | same |
+| per-site `vcenter.ip` (`.fqdn` = fallback) | vCenter REST — the `vm_*` tools | one inner vCenter per site |
+| per-site `srm.ip`, `vr.ip` (`.fqdn` = fallback) | SRM v2 REST / VR config API | the appliances |
+| per-site `vcenter.instance_uuid` | **`srm_pair_sites` only** | the vCenter **InstanceUuid** (= lookup-service `serviceId`). Needed **only for cross-site pairing**. Get it from the appliance `listVcServices` handler, or `(Get-View ServiceInstance).Content.About.InstanceUuid` / `si.content.about.instanceUuid` |
+| per-site `name`, `role`, `sddc_id` | `list_srm_environment` (display only) | informational, not used in any request |
+
+> For the common scope — **trigger a test recovery plan + read back VM power** — you only
+> need the IPs (and creds via env). `instance_uuid` matters only when you pair the two sites.
+> (The SRM/VR extension keys `com.vmware.vcDr` / `com.vmware.vcHms` are **not** in the config —
+> they're only used one-time by `register-dr-appliance.sh`, not by the MCP.)
 
 **Runtime env vars:**
 
