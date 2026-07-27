@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: srm-mcp
+  namespace: srm-mcp
+  labels:
+    app.kubernetes.io/name: srm-mcp
+spec:
+  selector:
+    app.kubernetes.io/name: srm-mcp
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+  type: ClusterIP
+  # For access from outside the cluster, front this with an Ingress/HTTPProxy,
+  # or `kubectl -n srm-mcp port-forward svc/srm-mcp 8080:8080` for a quick test.

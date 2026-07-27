@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "srm": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-e", "MCP_TRANSPORT=stdio", "srm-mcp:0.1.0"]
+    }
+  }
+}

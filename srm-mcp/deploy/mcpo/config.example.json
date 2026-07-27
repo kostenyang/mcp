@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "srm": {
+      "type": "streamable-http",
+      "url": "http://srm-mcp:8080/mcp",
+      "headers": {
+        "Authorization": "Bearer __SRM_MCP_API_KEY__"
+      }
+    }
+  }
+}
