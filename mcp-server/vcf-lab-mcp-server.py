@@ -14,8 +14,6 @@ Tools:
   ping_host             - Ping a host
   vcf_version           - Detect VCF component version (SDDC / Installer / vCenter)
   list_environments     - List known lab environments (M01 / M02 / M03 / VCF5.x)
-  search_vmware_docs    - Semantic search over indexed VMware docs + lab notes (RAG)
-  vmware_docs_index_info- Report coverage / freshness of the docs RAG index
 
 Start:  python3 vcf-lab-mcp-server.py
 Port:   https://0.0.0.0:7000/sse
@@ -23,10 +21,6 @@ Port:   https://0.0.0.0:7000/sse
 Required environment variables (set via systemd EnvironmentFile or shell):
   VCENTER_PASS, VCF_INSTALLER_PASS, SDDC_MANAGER_PASS, VROPS_PASS, DEFAULT_SSH_PASS
 If unset, tool calls that need them will fail at auth time (401 from upstream).
-
-Docs RAG (search_vmware_docs / vmware_docs_index_info) needs an index built
-offline by ingest_docs.py, plus: pip install chromadb sentence-transformers pypdf
-Index location override: env VMWARE_DOCS_INDEX_DIR (default /opt/vcf-mcp/docs-index)
 
 API keys for clients are loaded from /opt/vcf-mcp/keys.json (chmod 600).
 Generate a new key:  python3 -c "import secrets; print(secrets.token_urlsafe(32))"
@@ -71,12 +65,6 @@ VROPS_PASS = os.getenv("VROPS_PASS", "")
 DEFAULT_SSH_PASS = os.getenv("DEFAULT_SSH_PASS", "")
 
 DNS_SERVER = "10.0.0.200"
-
-# ── VMware docs RAG index (built offline by ingest_docs.py) ──────────────────
-DOCS_INDEX_DIR  = os.getenv("VMWARE_DOCS_INDEX_DIR", "/opt/vcf-mcp/docs-index")
-DOCS_EMBED_MODEL = os.getenv("VMWARE_DOCS_EMBED_MODEL", "BAAI/bge-m3")
-DOCS_COLLECTION = "vmware_docs"
-DOCS_SOURCES    = ("official", "kb", "lab-notes")
 
 # ── Lab environment map (M01 / M02 / M03 — 9.0 與 9.1 共用 IP，差別只在已部署的版本)
 LAB_ENVIRONMENTS = {
@@ -217,49 +205,6 @@ def _vrops_token(ip=VROPS_IP, user=VROPS_USER, pwd=None) -> str:
     )
     resp.raise_for_status()
     return resp.json().get("token", "")
-
-
-# ── Docs RAG ──────────────────────────────────────────────────────────────────
-# Chroma client + embedding model are heavy, so load lazily on first use and
-# cache. A missing dependency is cached as a permanent error for this process;
-# a missing index is NOT cached (re-run ingest_docs.py and the next call retries).
-_docs_collection = None
-_docs_import_error = None
-
-
-def _get_docs_collection():
-    global _docs_collection, _docs_import_error
-    if _docs_collection is not None:
-        return _docs_collection
-    if _docs_import_error is not None:
-        raise RuntimeError(_docs_import_error)
-    try:
-        import chromadb
-        from chromadb.utils import embedding_functions
-    except ImportError as exc:
-        _docs_import_error = (
-            f"docs RAG dependencies not installed ({exc}). "
-            f"Run: pip install chromadb sentence-transformers pypdf"
-        )
-        raise RuntimeError(_docs_import_error)
-    if not pathlib.Path(DOCS_INDEX_DIR).is_dir():
-        raise RuntimeError(
-            f"docs index not found at {DOCS_INDEX_DIR}. "
-            f"Build it offline first: python3 ingest_docs.py"
-        )
-    client = chromadb.PersistentClient(path=DOCS_INDEX_DIR)
-    ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name=DOCS_EMBED_MODEL)
-    try:
-        _docs_collection = client.get_collection(
-            DOCS_COLLECTION, embedding_function=ef)
-    except Exception as exc:
-        raise RuntimeError(
-            f"docs collection '{DOCS_COLLECTION}' missing in {DOCS_INDEX_DIR} "
-            f"({exc}). Re-run ingest_docs.py."
-        )
-    return _docs_collection
-
 
 # ── Tools ─────────────────────────────────────────────────────────────────────
 
@@ -596,99 +541,6 @@ def list_environments(probe: bool = False) -> str:
             except OSError:
                 cfg["_live"][key] = {"reachable": False}
     return json.dumps(env, indent=2, ensure_ascii=False)
-
-
-@mcp.tool()
-def search_vmware_docs(
-    query: str,
-    top_k: int = 5,
-    source: str = "all",
-    max_chars: int = 4000,
-) -> str:
-    """
-    Semantic search over the indexed VMware VCF 9.x documentation plus this
-    lab's own troubleshooting notes. Returns only the most relevant chunks
-    with their source — the full docs never enter the conversation.
-
-    Use this for authoritative VMware knowledge: what an advanced setting does,
-    a bringup / upgrade error, vSAN behaviour, a REST API path, etc.
-
-    query    : natural-language question or keywords
-    top_k    : number of chunks to return (clamped to 1-10)
-    source   : "all" | "official" (Broadcom docs) | "kb" (KB articles)
-               | "lab-notes" (this repo's *.md notes)
-    max_chars: truncate each returned chunk to this many characters
-
-    The index is built offline by ingest_docs.py — if it reports as missing,
-    that script has not been run yet.
-
-    Examples:
-      search_vmware_docs("what does the vSAN LSOM congestion threshold do")
-      search_vmware_docs("bringup fails at NSX deployment timeout", source="kb")
-      search_vmware_docs("correct gateway for nested ESXi vmk0", source="lab-notes")
-    """
-    try:
-        collection = _get_docs_collection()
-    except RuntimeError as exc:
-        return f"Docs search unavailable: {exc}"
-
-    if source != "all" and source not in DOCS_SOURCES:
-        return (f"Invalid source '{source}'. "
-                f"Use: all, {', '.join(DOCS_SOURCES)}")
-
-    top_k = max(1, min(int(top_k), 10))
-    where = None if source == "all" else {"source": source}
-    try:
-        res = collection.query(query_texts=[query], n_results=top_k, where=where)
-    except Exception as exc:
-        return f"Docs search error: {exc}"
-
-    docs = (res.get("documents") or [[]])[0]
-    metas = (res.get("metadatas") or [[]])[0]
-    dists = (res.get("distances") or [[]])[0]
-    if not docs:
-        return f"No matches for {query!r} (source={source})."
-
-    blocks = []
-    for i, (text, meta, dist) in enumerate(zip(docs, metas, dists), 1):
-        meta = meta or {}
-        score = round(1.0 - float(dist), 3)  # cosine distance → similarity
-        body = text if len(text) <= max_chars else text[:max_chars] + " …[truncated]"
-        blocks.append(
-            f"[{i}] {meta.get('title', '?')}  "
-            f"(source={meta.get('source', '?')}, score={score})\n"
-            f"    {meta.get('path', '')}\n{body}"
-        )
-    return "\n\n".join(blocks)
-
-
-@mcp.tool()
-def vmware_docs_index_info() -> str:
-    """
-    Report the VMware docs RAG index: embedding model, last ingestion time,
-    total chunk count and per-source breakdown. Use this to check whether the
-    index is built and fresh before relying on search_vmware_docs.
-    """
-    try:
-        collection = _get_docs_collection()
-    except RuntimeError as exc:
-        return f"Docs index unavailable: {exc}"
-
-    meta = collection.metadata or {}
-    lines = [
-        f"Docs index : {DOCS_INDEX_DIR}",
-        f"Embed model: {meta.get('embed_model', DOCS_EMBED_MODEL)}",
-        f"Ingested at: {meta.get('ingested_at', 'unknown')}",
-        f"Total chunks: {collection.count()}",
-        "Per source :",
-    ]
-    for src in DOCS_SOURCES:
-        try:
-            n = len(collection.get(where={"source": src}, include=[])["ids"])
-        except Exception:
-            n = "?"
-        lines.append(f"  {src}: {n}")
-    return "\n".join(lines)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

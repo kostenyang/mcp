@@ -1,6 +1,6 @@
 # VCF Lab MCP Server
 
-一個 [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server，把 VMware Cloud Foundation lab 環境的常見操作（vCenter / SDDC Manager / VCF Installer REST API、SSH、DNS、ping、版本偵測、VMware 文件語意搜尋…）包成 tool，讓 Claude (Claude Code / Claude Desktop) 或其他 MCP client 直接呼叫。
+一個 [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server，把 VMware Cloud Foundation lab 環境的常見操作（vCenter / SDDC Manager / VCF Installer REST API、SSH、DNS、ping、版本偵測…）包成 tool，讓 Claude (Claude Code / Claude Desktop) 或其他 MCP client 直接呼叫。
 
 跑在 Linux 主機上，HTTPS + SSE transport + Bearer token API key 認證。Client 端用 `.mcp.json` 或 `claude_desktop_config.json` 註冊。
 
@@ -219,40 +219,6 @@ def vcenter_power_off_vm(vm_id: str, dry_run: bool = True) -> str:
         info = vcenter_api("GET", f"/api/vcenter/vm/{vm_id}")
         return f"DRY RUN: would power off VM {vm_id}\nCurrent state:\n{info}"
     return vcenter_api("POST", f"/api/vcenter/vm/{vm_id}/power/stop")
-```
-
----
-
-## VMware 文件 RAG
-
-兩個 tool —— `search_vmware_docs`、`vmware_docs_index_info` —— 讓 Claude 能語意搜尋
-VMware VCF 9.x 官方文件與本 lab 自己的 troubleshooting 筆記。
-
-**為什麼這樣設計**：把幾百頁文件貼進對話，每輪都重算 token、成本線性成長。
-這裡反過來 —— 文件先離線切塊、embed 進向量庫，tool 每次只回傳最相關的數段。
-原始文件**永遠不進 Claude 的 context**，達到「檢索外包、推理留給 Claude」。
-
-```
-ingest_docs.py (離線)                  search_vmware_docs (線上 tool)
-  PDF/HTML/MD → chunk → embed → Chroma ──► query → embed → top-k 片段 + 出處
-```
-
-| 元件 | 選擇 | 理由 |
-|---|---|---|
-| 向量庫 | [Chroma](https://www.trychroma.com/)（內嵌、persist 到磁碟） | 單機、零額外服務 |
-| Embedding | `BAAI/bge-m3`（本地、`sentence-transformers`） | 多語 —— 官方文件英文、lab 筆記中文混用 |
-| 切塊 | 段落感知、~3500 字元、500 字元 overlap | 不在段落中間硬切 |
-
-- **索引離線建立**：[`ingest_docs.py`](./ingest_docs.py) 從 `docs-src/{official,kb}/`
-  讀 PDF/HTML/txt，再用 `--lab-notes` 收 vcf9.1-lab repo 的 `*.md`。
-- **server 端依賴是惰性載入的**：沒裝 `chromadb` / `sentence-transformers` 時
-  這兩個 tool 回傳明確錯誤，**不影響 server 啟動與其餘 tool**。
-- 完整建索引流程見 [`INSTALL.md`](./INSTALL.md) 的「VMware 文件 RAG」段。
-
-```python
-search_vmware_docs("what does the vSAN LSOM congestion threshold do")
-search_vmware_docs("bringup fails at NSX deployment timeout", source="kb")
-vmware_docs_index_info()   # 看 index 涵蓋了哪些 source、何時建立
 ```
 
 ---
