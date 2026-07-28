@@ -30,7 +30,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from .client import SrmClient
-from .config import actions_allowed, live_mode, load_config
+from .config import actions_allowed, live_mode, load_config, vcenter_tools_enabled
 from .vcenter import VCenterClient
 
 # ── setup ─────────────────────────────────────────────────────────────────────
@@ -441,11 +441,17 @@ def srm_failover_and_watch(site: str, plan_id: str, mode: str = "test",
             last_state = state
             if state in ("TEST_COMPLETE", "RECOVERY_COMPLETE", "CANCELLED", "ERROR"):
                 break
-        # cross-check the recovery-site vCenter power state
-        vcpower = _vc.vm_list(rsite, "srm-test")
-        return _j({"plan_id": plan_id, "mode": mode, "final_state": last_state,
-                   "timeline": timeline,
-                   "recovery_site_vcenter": (vcpower.get("data") or {}).get("vms")})
+        result = {"plan_id": plan_id, "mode": mode, "final_state": last_state,
+                  "timeline": timeline}
+        # VM power is already in the timeline (from SRM's own plan-VM status).
+        # Only cross-check the recovery-site vCenter when vCenter access is allowed;
+        # in SRM-only mode (SRM_VCENTER_TOOLS=0) the MCP never touches vCenter.
+        if vcenter_tools_enabled():
+            vcpower = _vc.vm_list(rsite, "srm-test")
+            result["recovery_site_vcenter"] = (vcpower.get("data") or {}).get("vms")
+        else:
+            result["_note"] = "SRM-only mode: VM power reported by SRM (recovery_plan_vms); vCenter not accessed"
+        return _j(result)
     except Exception as exc:
         return _j({"error": f"srm_failover_and_watch: {exc}", "timeline": timeline})
 
@@ -534,6 +540,20 @@ def _sanitize_tool_schemas() -> None:
             pass
 
 
+# SRM-only mode: drop every tool that talks to vCenter directly, so the MCP has no
+# vCenter code path at all and needs only an SRM-scoped SSO account. VM power status
+# still comes from SRM (srm_recovery_plan_vms / srm_failover_and_watch timeline).
+_VCENTER_TOOLS = ("vm_list", "vm_info", "vm_snapshot_list", "vm_power", "vm_snapshot")
+
+
+def _apply_srm_only_mode() -> None:
+    if vcenter_tools_enabled():
+        return
+    for name in _VCENTER_TOOLS:
+        mcp._tool_manager._tools.pop(name, None)
+
+
+_apply_srm_only_mode()
 _sanitize_tool_schemas()
 
 
@@ -581,16 +601,18 @@ def main():
     import sys
     mode = "LIVE" if live_mode() else "MOCK"
     acts = "ENABLED" if actions_allowed() else "disabled"
+    scope = "full" if vcenter_tools_enabled() else "SRM-ONLY (no vCenter)"
+    ntools = len(mcp._tool_manager.list_tools())
     transport = os.getenv("MCP_TRANSPORT", "http").lower()
 
     if transport == "stdio":
         # stdio: stdout carries the JSON-RPC stream — banner MUST go to stderr.
-        print(f"srm-mcp stdio — mode={mode}, actions={acts}, sites={list(_cfg.sites)}",
+        print(f"srm-mcp stdio — mode={mode}, actions={acts}, scope={scope}, tools={ntools}",
               file=sys.stderr, flush=True)
         mcp.run(transport="stdio")
         return
 
-    print(f"srm-mcp starting — mode={mode}, actions={acts}, sites={list(_cfg.sites)}")
+    print(f"srm-mcp starting — mode={mode}, actions={acts}, scope={scope}, tools={ntools}")
     print("Transport: streamable-HTTP on http://0.0.0.0:8080/mcp  (health: /healthz)")
     app = Gateway(mcp.streamable_http_app())
     uvicorn.run(app, host="0.0.0.0", port=8080)

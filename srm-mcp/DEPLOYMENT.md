@@ -39,6 +39,7 @@ YAML — they come from env vars. The file holds **only fields the MCP actually 
 | `MCP_TRANSPORT` | `http` | `http` (k8s/vm) or `stdio` (docker/Claude clients) |
 | `SRM_LIVE` | `0` | `0` = MOCK (no lab needed); `1` = hit real `192.168.114.x` appliances |
 | `SRM_ALLOW_ACTIONS` | `0` | `1` = enable destructive tools (recovery / pairing / VM writes) |
+| `SRM_VCENTER_TOOLS` | `1` | `0` = **SRM-only mode**: drop all `vm_*` tools, never call vCenter (see below) |
 | `SRM_SSO_PASS` | — | vCenter SSO password (only when `SRM_LIVE=1`) |
 | `SRM_APPLIANCE_PASS` | — | SRM/VR appliance VAMI password (only when `SRM_LIVE=1`) |
 | `SRM_MCP_API_KEYS` | — | comma-separated Bearer tokens for HTTP transport (k8s/vm) |
@@ -50,6 +51,21 @@ YAML — they come from env vars. The file holds **only fields the MCP actually 
 > **Safety:** read-only tools are always available. Destructive tools refuse unless
 > `SRM_ALLOW_ACTIONS=1` **and** the call passes `confirm=<target>` (and `execute=true` for
 > recovery/pairing). Default config is physically read-only.
+
+### SRM-only mode (no vCenter permissions) — `SRM_VCENTER_TOOLS=0`
+
+For environments where the MCP must **not** hold vCenter privileges — it should only
+trigger SRM plans. With `SRM_VCENTER_TOOLS=0`:
+
+- the `vm_*` tools (`vm_list`/`vm_info`/`vm_power`/`vm_snapshot*`) are **not registered**,
+  so the MCP has no code path to vCenter at all (14 tools instead of 19);
+- `srm_failover_and_watch` **skips the vCenter cross-check** — VM power status still comes
+  from **SRM itself** (`srm_recovery_plan_vms` / the plan-VM `power_state` in the timeline).
+
+Then the SSO account in `sso_pass_env` only needs an **SRM "run/test recovery plan"
+privilege** — *not* vCenter Administrator. SRM performs the actual vCenter operations using
+its own solution user; the MCP just presses the button. Create a dedicated least-privilege
+SSO service account and grant it only the SRM role — no vCenter admin rights.
 
 ---
 

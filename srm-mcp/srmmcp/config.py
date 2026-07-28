@@ -30,6 +30,15 @@ def actions_allowed() -> bool:
     return os.getenv("SRM_ALLOW_ACTIONS", "0") == "1"
 
 
+def vcenter_tools_enabled() -> bool:
+    """SRM_VCENTER_TOOLS=0 -> SRM-only mode: no vCenter tools, no vCenter access.
+
+    The MCP then only needs an SSO account with SRM 'run recovery plan' privilege —
+    NOT vCenter permissions. VM power status still comes from SRM (recovery_plan_vms).
+    """
+    return os.getenv("SRM_VCENTER_TOOLS", "1") == "1"
+
+
 def config_path() -> pathlib.Path:
     explicit = os.getenv("SRM_CONFIG")
     if explicit:
@@ -83,6 +92,8 @@ class SrmConfig:
             "appliance_user": self.appliance_user,
             "live_mode": live_mode(),
             "actions_allowed": actions_allowed(),
+            "vcenter_tools": vcenter_tools_enabled(),
+            "mode": "full" if vcenter_tools_enabled() else "srm-only (no vCenter access)",
             "config_path": str(config_path()),
             "sites": self.sites,
         }
