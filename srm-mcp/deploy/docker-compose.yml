@@ -15,6 +15,7 @@ services:
       SRM_MCP_API_KEYS: ${SRM_MCP_API_KEYS:?set in .env}
       SRM_LIVE: ${SRM_LIVE:-0}                 # 0=MOCK (default), 1=hit real appliances
       SRM_ALLOW_ACTIONS: ${SRM_ALLOW_ACTIONS:-0}
+      SRM_VCENTER_TOOLS: ${SRM_VCENTER_TOOLS:-1}   # 0 = SRM-only (no vCenter tools)
       SRM_SSO_PASS: ${SRM_SSO_PASS:-}
       SRM_APPLIANCE_PASS: ${SRM_APPLIANCE_PASS:-}
     ports:
