@@ -37,16 +37,29 @@ services:
     ports:
       - "8000:8000"          # OpenAPI: http://<vm>:8000/srm  (docs at /srm/docs)
 
+  # Optional fully on-prem LLM (CPU). Pull a tool-calling model, e.g.:
+  #   docker compose exec ollama ollama pull qwen2.5:7b
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+    ports:
+      - "11434:11434"
+
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
     restart: unless-stopped
     depends_on:
       - mcpo
+      - ollama
     environment:
       # external OpenAI-compatible endpoint (the LLM that does tool calling).
       # May be left empty here and configured in the UI (Settings > Connections).
       OPENAI_API_BASE_URL: ${OPENAI_API_BASE_URL:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # on-prem Ollama (local models, no external calls)
+      OLLAMA_BASE_URL: http://ollama:11434
       WEBUI_NAME: "rtolab SRM MCP"
     volumes:
       - openwebui:/app/backend/data
@@ -55,3 +68,4 @@ services:
 
 volumes:
   openwebui:
+  ollama:

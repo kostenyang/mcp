@@ -196,6 +196,36 @@ Tool calls only fire if the model actually supports and emits them:
 - **OpenAI (`gpt-4o-mini`) / Claude** have lenient function-calling and work with
   OpenWebUI + mcpo out of the box — use them if a Gemini model won't emit tool calls.
 
+### 2c. Fully on-prem LLM (Ollama, no external API, GPU-light)
+
+To keep the LLM local too — no external API, no GPU required. The compose already
+includes an `ollama` service and points OpenWebUI at it (`OLLAMA_BASE_URL=http://ollama:11434`).
+
+```bash
+docker compose up -d ollama open-webui
+docker compose exec ollama ollama pull qwen2.5:7b   # ~4.7 GB, good small-model tool caller
+```
+
+Then in OpenWebUI: **Workspace → Models →** edit your model preset → Base Model =
+`qwen2.5:7b` (or set it as the chat model), enable the `srm-mcp` tool, and ask e.g.
+*"對 site1 的 recovery plan rp-0001 做 test failover"*.
+
+**Design principles for a local small model** (validated end-to-end with qwen2.5:7b on CPU):
+
+| Principle | Why |
+|---|---|
+| **Pick a tool-calling model** — `qwen2.5:7b`, Llama-3.1-8B, Hermes/Functionary | small models are weak at function-calling; avoid < 3B |
+| **Few, high-level tools** — one tool does the whole job | `srm_failover_and_watch` = trigger+poll+report in one call, so the model only makes one call with 2 args |
+| **Flat, clean schemas** | `_gemini_safe_schema` (title/default/$ref stripped) helps every small model, not just Gemini |
+| **Safety in the MCP, not the model** | the `SRM_ALLOW_ACTIONS`+`confirm`+`execute` gate blocks a hallucinated call from executing |
+| **Facts via RAG, not tools** | OpenWebUI **Knowledge** (local CPU embedding, `all-MiniLM-L6-v2`) grounds the model from local `.md` docs — no GPU, fewer tools needed |
+| **Quantized + CPU** | `qwen2.5:7b` Q4 ≈ 5–6 GB RAM, runs on CPU; needs ~6 vCPU / 12 GB VM, no GPU |
+
+The whole agentic loop (local model decides → mcpo executes the tool → local model reports
+VM power in natural language) runs on-prem with **zero external calls**. Because the MCP
+already follows these principles, switching the backend from Gemini to a local Ollama model
+requires **no MCP code changes**.
+
 ---
 
 ## 3. Docker (stdio)
