@@ -469,13 +469,17 @@ def srm_pair_sites(local_site: str = "site1", remote_site: str = "site2",
     local_site = _resolve_site(local_site)
     remote_site = _resolve_site(remote_site)
     remote = _cfg.site(remote_site)
+    try:
+        rvc = _cfg.vcenter(remote_site)   # pairing needs the remote vCenter block
+    except Exception as exc:
+        return f"srm_pair_sites error: {exc}"
     spec = {
         "pair_psc_info": {
-            "url": remote["vcenter"]["fqdn"], "port": 443,
+            "url": rvc["fqdn"], "port": 443,
             "thumbprint": "<remote vc SHA-256>",
             "username": _cfg.sso_user, "password": "<from env>",
         },
-        "pair_vc_guid": remote["vcenter"]["instance_uuid"],
+        "pair_vc_guid": rvc["instance_uuid"],
         "pair_srm_url": f"https://{remote['srm']['fqdn']}:443",
         "pair_srm_thumbprint": "<remote srm SHA-256>",
         "description": f"{local_site} <-> {remote_site}",

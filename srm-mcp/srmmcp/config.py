@@ -75,14 +75,31 @@ class SrmConfig:
             )
         return self.sites[key]
 
+    def _block(self, site_key: str, name: str) -> dict:
+        """Return a site sub-block (srm/vcenter/vr), with a clear error if absent.
+
+        Only `srm` is required. `vcenter` (pairing) and `vr` (VR tools) are optional —
+        for a pure SRM-only deployment the config may contain just the `srm` blocks.
+        """
+        blk = self.site(site_key).get(name)
+        if not blk:
+            raise KeyError(
+                f"site {site_key!r} has no '{name}' block in config "
+                f"(it's optional — add it only if you use the tools that need it)"
+            )
+        return blk
+
     def srm_host(self, site_key: str) -> str:
         """SRM appliance IP (prefer IP — rtolab.local often not resolvable)."""
-        s = self.site(site_key)["srm"]
+        s = self._block(site_key, "srm")
         return s.get("ip") or s.get("fqdn")
 
     def vr_host(self, site_key: str) -> str:
-        s = self.site(site_key)["vr"]
+        s = self._block(site_key, "vr")
         return s.get("ip") or s.get("fqdn")
+
+    def vcenter(self, site_key: str) -> dict:
+        return self._block(site_key, "vcenter")
 
     def summary(self) -> dict:
         """Redacted topology for list_srm_environment (no secrets)."""
