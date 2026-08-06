@@ -1,0 +1,45 @@
+# srm-mcp — SINGLE-SITE topology (only the recovery site).
+#
+# Copy to config/srm.yaml (or point SRM_CONFIG at it) for a deployment that has
+# login to ONE SRM only. Because exactly one site is defined, the MCP auto-enters
+# single-site mode: every tool targets this site and the `site` argument is ignored;
+# the cross-site pairing tool (srm_pair_sites) is disabled.
+#
+# ── What a single-site (recovery) session CAN do (verified live 2026-08-06) ──
+#   list_srm_environment          topology + runtime mode
+#   srm_list_pairings             sees the pairing (remote server detail needs remote auth)
+#   srm_list_recovery_plans       ✅ 200 — list recovery plans (no remote login needed)
+#   srm_recovery_plan_status      plan run state
+#   srm_recovery_plan_vms         VMs in a plan (source-side detail may be partial)
+#   srm_run_recovery_plan         ✅ TEST / RECOVERY / CLEANUP — the core DR action
+#   srm_appliance_summary         this appliance's drConfiguration/health
+#
+# ── What it CANNOT do single-site ──
+#   * see the remote (protected) site's server health  -> "Session is not authenticated"
+#   * manage protection groups / replications          (configured from the protected site)
+#   * pair sites                                        (needs both sites)
+#
+# Recommended env for a customer "trigger-only" box:
+#   SRM_LIVE=1  SRM_VCENTER_TOOLS=0  SRM_ALLOW_ACTIONS=1   (+ SRM_SSO_PASS, SRM_MCP_API_KEYS)
+# SRM_VCENTER_TOOLS=0 keeps it SRM-only — the SSO account then only needs the SRM
+# "run recovery plan" privilege, NOT vCenter permissions.
+
+domain: rtolab.local
+
+sso_user: administrator@vsphere.local
+sso_pass_env: SRM_SSO_PASS
+appliance_user: admin
+appliance_pass_env: SRM_APPLIANCE_PASS
+
+# Exactly ONE site → single-site mode. Name it whatever the deployment is; the key
+# is the default (and only) site. Here: the recovery site.
+sites:
+  recovery:
+    name: rtolab-521-site2
+    role: recovery
+    sddc_id: vcf-m02c
+    srm:                                    # REQUIRED
+      fqdn: kosten-vcf521-srm.rtolab.local
+      ip: 192.168.114.49
+    # vcenter/vr are OPTIONAL and NOT needed for the trigger-only use case.
+    # Add a vcenter block only if you enable SRM_VCENTER_TOOLS=1 for VM-power lookups.

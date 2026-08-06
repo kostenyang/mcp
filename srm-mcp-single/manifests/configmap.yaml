@@ -1,0 +1,24 @@
+# Topology (no secrets). Mounted at /app/config/srm.yaml.
+# SINGLE-SITE edition: exactly one site -> the MCP auto-enters single-site mode
+# (SRM_SINGLE_SITE=1 also set on the Deployment to make the intent explicit).
+# Keep this in sync with config/srm.example.yaml. Passwords come from the Secret.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: srm-topology
+  namespace: srm-mcp
+data:
+  srm.yaml: |
+    domain: rtolab.local
+    sso_user: administrator@vsphere.local
+    sso_pass_env: SRM_SSO_PASS
+    appliance_user: admin
+    appliance_pass_env: SRM_APPLIANCE_PASS
+    # Exactly ONE site -> single-site mode. Here: the recovery site.
+    sites:
+      recovery:
+        name: rtolab-521-site2
+        role: recovery
+        sddc_id: vcf-m02c
+        srm: { fqdn: kosten-vcf521-srm.rtolab.local, ip: 192.168.114.49 }
+        # vcenter/vr optional — only add if SRM_VCENTER_TOOLS=1 (VM-power lookups)

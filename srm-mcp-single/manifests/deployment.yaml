@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: srm-mcp
+  namespace: srm-mcp
+  labels:
+    app.kubernetes.io/name: srm-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: srm-mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: srm-mcp
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: srm-mcp
+          image: srm-mcp:0.1.0        # push to your registry / VKS Harbor and update
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            # runtime mode — flip SRM_LIVE to "1" once the pod can reach 192.168.114.x
+            - { name: SRM_LIVE,          value: "0" }
+            - { name: SRM_ALLOW_ACTIONS, value: "0" }
+            - { name: SRM_SINGLE_SITE,   value: "1" }   # single-site edition
+            - { name: SRM_CONFIG,        value: "/app/config/srm.yaml" }
+          envFrom:
+            - secretRef: { name: srm-secrets }
+          volumeMounts:
+            - name: topology
+              mountPath: /app/config/srm.yaml
+              subPath: srm.yaml
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits:   { cpu: 500m, memory: 256Mi }
+      volumes:
+        - name: topology
+          configMap:
+            name: srm-topology

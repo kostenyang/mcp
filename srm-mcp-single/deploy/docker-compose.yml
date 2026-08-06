@@ -1,0 +1,71 @@
+# srm-mcp "VM version" — single Linux VM test stack.
+#   open-webui  ──(OpenAPI tools)──> mcpo ──(MCP streamable-HTTP)──> srm-mcp ──> VMware API
+#        └────────────────────────> external OpenAI-compatible LLM (tool calling)
+#
+# Copy .env.example -> .env and fill it in, put the real token into mcpo/config.json,
+# then:  docker compose up -d --build
+services:
+  srm-mcp:
+    build:
+      context: ..            # repo root (has Dockerfile + srmmcp/)
+      dockerfile: Dockerfile
+    image: srm-mcp:0.1.0
+    restart: unless-stopped
+    environment:
+      SRM_MCP_API_KEYS: ${SRM_MCP_API_KEYS:?set in .env}
+      SRM_LIVE: ${SRM_LIVE:-0}                 # 0=MOCK (default), 1=hit real appliances
+      SRM_ALLOW_ACTIONS: ${SRM_ALLOW_ACTIONS:-0}
+      SRM_VCENTER_TOOLS: ${SRM_VCENTER_TOOLS:-1}   # 0 = SRM-only (no vCenter tools)
+      SRM_SSO_PASS: ${SRM_SSO_PASS:-}
+      SRM_APPLIANCE_PASS: ${SRM_APPLIANCE_PASS:-}
+    ports:
+      - "8080:8080"          # optional: /healthz + /mcp for debugging
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz',timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  mcpo:
+    image: ghcr.io/open-webui/mcpo:main
+    restart: unless-stopped
+    depends_on:
+      - srm-mcp
+    command: ["--config", "/config/config.json", "--host", "0.0.0.0", "--port", "8000"]
+    volumes:
+      - ./mcpo/config.json:/config/config.json:ro
+    ports:
+      - "8000:8000"          # OpenAPI: http://<vm>:8000/srm  (docs at /srm/docs)
+
+  # Optional fully on-prem LLM (CPU). Pull a tool-calling model, e.g.:
+  #   docker compose exec ollama ollama pull qwen2.5:7b
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+    ports:
+      - "11434:11434"
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    restart: unless-stopped
+    depends_on:
+      - mcpo
+      - ollama
+    environment:
+      # external OpenAI-compatible endpoint (the LLM that does tool calling).
+      # May be left empty here and configured in the UI (Settings > Connections).
+      OPENAI_API_BASE_URL: ${OPENAI_API_BASE_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # on-prem Ollama (local models, no external calls)
+      OLLAMA_BASE_URL: http://ollama:11434
+      WEBUI_NAME: "rtolab SRM MCP"
+    volumes:
+      - openwebui:/app/backend/data
+    ports:
+      - "3000:8080"          # UI: http://<vm>:3000
+
+volumes:
+  openwebui:
+  ollama:

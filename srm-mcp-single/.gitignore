@@ -1,0 +1,17 @@
+# real topology + secrets — keep only srm.example.yaml in git
+config/srm.yaml
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# local env
+.env
+deploy/.env
+deploy/mcpo/config.json
+
+# build artifacts
+deploy/provision/*.iso
